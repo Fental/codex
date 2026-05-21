@@ -8,6 +8,14 @@
 | Git (optional, recommended) | 2.23+ for built-in PR helpers                                   |
 | RAM                         | 4-GB minimum (8-GB recommended)                                 |
 
+### Windows via WinGet
+
+On Windows, install the latest stable Codex CLI release with WinGet:
+
+```powershell
+winget install -e --id OpenAI.Codex
+```
+
 ### DotSlash
 
 The GitHub Release also contains a [DotSlash](https://dotslash-cli.com/) file for the Codex CLI named `codex`. Using a DotSlash file makes it possible to make a lightweight commit to source control to ensure all contributors use the same version of an executable, regardless of what platform they use for development.
