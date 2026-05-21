@@ -8,6 +8,7 @@ use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::goal_display::goal_status_label;
 use crate::goal_display::goal_usage_summary;
+use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_protocol::ThreadId;
 
@@ -111,6 +112,7 @@ impl App {
         objective: String,
         mode: ThreadGoalSetMode,
     ) {
+        let mut mode = mode;
         if matches!(mode, ThreadGoalSetMode::ConfirmIfExists) {
             let result = app_server.thread_goal_get(thread_id).await;
             if self.current_displayed_thread_id() != Some(thread_id) {
@@ -118,11 +120,14 @@ impl App {
             }
 
             match result {
-                Ok(response) if response.goal.is_some() => {
-                    self.show_replace_thread_goal_confirmation(thread_id, objective);
-                    return;
-                }
-                Ok(_) => {}
+                Ok(response) => match response.goal.as_ref() {
+                    Some(goal) if should_confirm_before_replacing_goal(goal) => {
+                        self.show_replace_thread_goal_confirmation(thread_id, objective);
+                        return;
+                    }
+                    Some(_) => mode = ThreadGoalSetMode::ReplaceExisting,
+                    None => {}
+                },
                 Err(err) => {
                     self.chat_widget
                         .add_error_message(format!("Failed to read thread goal: {err}"));
@@ -272,5 +277,49 @@ impl App {
             "Usage: /goal <objective>".to_string(),
             Some("Create a goal before editing it.".to_string()),
         );
+    }
+}
+
+fn should_confirm_before_replacing_goal(goal: &ThreadGoal) -> bool {
+    // Completed goals are terminal, so `/goal <objective>` can start a fresh goal
+    // without asking the user to confirm replacing already-finished work.
+    goal.status != ThreadGoalStatus::Complete
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completed_goal_does_not_require_replace_confirmation() {
+        assert!(!should_confirm_before_replacing_goal(&test_goal(
+            ThreadGoalStatus::Complete
+        )));
+    }
+
+    #[test]
+    fn unfinished_goals_require_replace_confirmation() {
+        for status in [
+            ThreadGoalStatus::Active,
+            ThreadGoalStatus::Paused,
+            ThreadGoalStatus::Blocked,
+            ThreadGoalStatus::UsageLimited,
+            ThreadGoalStatus::BudgetLimited,
+        ] {
+            assert!(should_confirm_before_replacing_goal(&test_goal(status)));
+        }
+    }
+
+    fn test_goal(status: ThreadGoalStatus) -> ThreadGoal {
+        ThreadGoal {
+            thread_id: ThreadId::new().to_string(),
+            objective: "Finish the thing.".to_string(),
+            status,
+            token_budget: None,
+            tokens_used: 0,
+            time_used_seconds: 0,
+            created_at: 1_776_272_400,
+            updated_at: 1_776_272_460,
+        }
     }
 }
