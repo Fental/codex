@@ -1051,6 +1051,8 @@ async fn maybe_request_mcp_tool_approval(
     }
 
     let args = RequestUserInputArgs {
+        input_type: None,
+        option_picker_allow_multiple: None,
         questions: vec![question],
     };
     let response = sess
@@ -1353,6 +1355,10 @@ fn build_mcp_tool_approval_question(
         id: question_id,
         header: "Approve app tool call?".to_string(),
         question,
+        input_type: None,
+        allow_multiple: None,
+        optional: None,
+        placeholder: None,
         is_other: false,
         is_secret: false,
         options: Some(options),

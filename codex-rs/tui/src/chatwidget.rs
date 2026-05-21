@@ -1908,6 +1908,8 @@ fn request_user_input_from_params(params: ToolRequestUserInputParams) -> Request
     RequestUserInputEvent {
         turn_id: params.turn_id,
         call_id: params.item_id,
+        input_type: params.input_type,
+        option_picker_allow_multiple: params.option_picker_allow_multiple,
         questions: params
             .questions
             .into_iter()
@@ -1916,6 +1918,10 @@ fn request_user_input_from_params(params: ToolRequestUserInputParams) -> Request
                     id: question.id,
                     header: question.header,
                     question: question.question,
+                    input_type: None,
+                    allow_multiple: None,
+                    optional: None,
+                    placeholder: None,
                     is_other: question.is_other,
                     is_secret: question.is_secret,
                     options: question.options.map(|options| {
@@ -6988,6 +6994,8 @@ impl ChatWidget {
                 self.on_request_user_input(request_user_input_from_params(params));
             }
             ServerRequest::DynamicToolCall { .. }
+            | ServerRequest::ToolOptionPicker { .. }
+            | ServerRequest::ToolSetupCodexContextPicker { .. }
             | ServerRequest::ChatgptAuthTokensRefresh { .. }
             | ServerRequest::ApplyPatchApproval { .. }
             | ServerRequest::ExecCommandApproval { .. } => {
@@ -7769,6 +7777,7 @@ impl ChatWidget {
             EventMsg::RequestUserInput(ev) => {
                 self.on_request_user_input(ev);
             }
+            EventMsg::OptionPicker(_) => {}
             EventMsg::RequestPermissions(ev) => {
                 self.on_request_permissions(ev);
             }

@@ -125,6 +125,10 @@ async fn request_skill_dependencies(
                 question: format!(
                     "{requirement} This is an experimental internal feature. The value is stored in memory for this session only."
                 ),
+                input_type: None,
+                allow_multiple: None,
+                optional: None,
+                placeholder: None,
                 is_other: false,
                 is_secret: true,
                 options: None,
@@ -139,7 +143,11 @@ async fn request_skill_dependencies(
         .request_user_input(
             turn_context,
             format!("skill-deps-{}", turn_context.sub_id),
-            RequestUserInputArgs { questions },
+            RequestUserInputArgs {
+                input_type: None,
+                option_picker_allow_multiple: None,
+                questions,
+            },
         )
         .await
         .unwrap_or_else(|| RequestUserInputResponse {

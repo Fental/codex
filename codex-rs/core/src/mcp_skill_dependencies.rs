@@ -233,6 +233,10 @@ async fn should_install_mcp_dependencies(
         question: format!(
             "The following MCP servers are required by the selected skills but are not installed yet: {server_list}. Install them now?"
         ),
+        input_type: None,
+        allow_multiple: None,
+        optional: None,
+        placeholder: None,
         is_other: false,
         is_secret: false,
         options: Some(vec![
@@ -250,6 +254,8 @@ async fn should_install_mcp_dependencies(
         ]),
     };
     let args = RequestUserInputArgs {
+        input_type: None,
+        option_picker_allow_multiple: None,
         questions: vec![question],
     };
     let sub_id = &turn_context.sub_id;

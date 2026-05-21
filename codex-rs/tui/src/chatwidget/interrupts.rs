@@ -161,6 +161,10 @@ mod tests {
         RequestUserInputEvent {
             call_id: call_id.to_string(),
             turn_id: turn_id.to_string(),
+            title: None,
+            submit_label: None,
+            skip_label: None,
+            placement: None,
             questions: Vec::new(),
         }
     }

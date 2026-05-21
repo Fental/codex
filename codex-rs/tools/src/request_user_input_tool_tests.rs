@@ -13,7 +13,8 @@ fn request_user_input_tool_includes_questions_schema() {
             description: "Ask the user to choose.".to_string(),
             strict: false,
             defer_loading: None,
-            parameters: JsonSchema::object(BTreeMap::from([(
+            parameters: JsonSchema::object(BTreeMap::from([
+                (
                     "questions".to_string(),
                     JsonSchema::array(
                         JsonSchema::object(
@@ -75,7 +76,6 @@ fn request_user_input_tool_includes_questions_schema() {
                                 "id".to_string(),
                                 "header".to_string(),
                                 "question".to_string(),
-                                "options".to_string(),
                             ]),
                             Some(false.into()),
                         ),
@@ -83,7 +83,8 @@ fn request_user_input_tool_includes_questions_schema() {
                             "Questions to show the user. Prefer 1 and do not exceed 3".to_string(),
                         ),
                     ),
-                )]), Some(vec!["questions".to_string()]), Some(false.into())),
+                ),
+            ]), Some(vec!["questions".to_string()]), Some(false.into())),
             output_schema: None,
         })
     );
