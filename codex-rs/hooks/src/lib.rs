@@ -48,6 +48,7 @@ pub const HOOK_EVENT_NAMES_WITH_MATCHERS: [&str; 8] = [
 pub use events::compact::PostCompactRequest;
 pub use events::compact::PreCompactOutcome;
 pub use events::compact::PreCompactRequest;
+pub use events::compact::PreCompactTerminalAction;
 pub use events::compact::StatelessHookOutcome;
 pub use events::permission_request::PermissionRequestDecision;
 pub use events::permission_request::PermissionRequestOutcome;

@@ -66,3 +66,29 @@ async fn plan_mode_uses_contributed_turn_item_for_last_agent_message() {
         Some("plan contributed assistant text")
     );
 }
+
+#[test]
+fn context_transform_terminal_actions_map_to_turn_lifecycle() {
+    assert_eq!(
+        context_transform_terminal_handling(&CodexErr::TurnAborted),
+        Some(ContextTransformTerminalHandling::Abort)
+    );
+    assert_eq!(
+        context_transform_terminal_handling(&CodexErr::ContextTransformBudgetExhausted {
+            action: codex_protocol::error::ContextTransformTerminalAction::Success,
+            message: "limit reached".to_string(),
+        }),
+        Some(ContextTransformTerminalHandling::Complete)
+    );
+    assert_eq!(
+        context_transform_terminal_handling(&CodexErr::ContextTransformBudgetExhausted {
+            action: codex_protocol::error::ContextTransformTerminalAction::ReturnInfo,
+            message: "limit reached".to_string(),
+        }),
+        Some(ContextTransformTerminalHandling::CompleteWithInfo)
+    );
+    assert_eq!(
+        context_transform_terminal_handling(&CodexErr::SessionBudgetExceeded),
+        None
+    );
+}

@@ -167,6 +167,30 @@ pub(crate) struct PermissionRequestCommandOutputWire {
 pub(crate) struct PreCompactCommandOutputWire {
     #[serde(flatten)]
     pub universal: HookUniversalOutputWire,
+    #[serde(default)]
+    pub hook_specific_output: Option<PreCompactHookSpecificOutputWire>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PreCompactHookSpecificOutputWire {
+    #[schemars(schema_with = "pre_compact_hook_event_name_schema")]
+    pub hook_event_name: HookEventNameWire,
+    #[serde(default)]
+    pub terminal_action: Option<PreCompactTerminalActionWire>,
+    #[serde(default)]
+    pub terminal_reason: Option<String>,
+    #[serde(default)]
+    pub terminal_info: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PreCompactTerminalActionWire {
+    Abort,
+    Success,
+    ReturnInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

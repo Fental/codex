@@ -21,6 +21,7 @@ use codex_hooks::UserPromptSubmitOutcome;
 use codex_hooks::UserPromptSubmitRequest;
 use codex_otel::HOOK_RUN_DURATION_METRIC;
 use codex_otel::HOOK_RUN_METRIC;
+use codex_protocol::error::CodexErr;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::models::ResponseItem;
@@ -385,16 +386,49 @@ pub(crate) async fn run_pre_compact_hooks(
 
     let outcome = sess.hooks().run_pre_compact(request).await;
     emit_hook_completed_events(sess, turn_context, outcome.hook_events).await;
-    if outcome.should_stop {
-        PreCompactHookOutcome::Stopped
-    } else {
-        PreCompactHookOutcome::Continue
+    match outcome.terminal_action {
+        codex_hooks::PreCompactTerminalAction::Continue => PreCompactHookOutcome::Continue,
+        codex_hooks::PreCompactTerminalAction::Abort => PreCompactHookOutcome::Stopped,
+        codex_hooks::PreCompactTerminalAction::Success => PreCompactHookOutcome::Completed {
+            reason: outcome.stop_reason,
+        },
+        codex_hooks::PreCompactTerminalAction::ReturnInfo => PreCompactHookOutcome::ReturnedInfo {
+            reason: outcome.stop_reason,
+            info: outcome.terminal_info,
+        },
     }
 }
 
 pub(crate) enum PreCompactHookOutcome {
     Continue,
     Stopped,
+    Completed {
+        reason: Option<String>,
+    },
+    ReturnedInfo {
+        reason: Option<String>,
+        info: Option<String>,
+    },
+}
+
+pub(crate) fn pre_compact_terminal_error(outcome: PreCompactHookOutcome) -> Option<CodexErr> {
+    match outcome {
+        PreCompactHookOutcome::Completed { reason } => {
+            Some(CodexErr::ContextTransformBudgetExhausted {
+                action: codex_protocol::error::ContextTransformTerminalAction::Success,
+                message: reason.unwrap_or_else(|| "context transform budget exhausted".to_string()),
+            })
+        }
+        PreCompactHookOutcome::ReturnedInfo { reason, info } => {
+            Some(CodexErr::ContextTransformBudgetExhausted {
+                action: codex_protocol::error::ContextTransformTerminalAction::ReturnInfo,
+                message: info
+                    .or(reason)
+                    .unwrap_or_else(|| "context transform budget exhausted".to_string()),
+            })
+        }
+        PreCompactHookOutcome::Continue | PreCompactHookOutcome::Stopped => None,
+    }
 }
 
 pub(crate) enum PostCompactHookOutcome {

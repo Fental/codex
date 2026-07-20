@@ -48,11 +48,22 @@ pub struct StatelessHookOutcome {
     pub stop_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PreCompactTerminalAction {
+    #[default]
+    Continue,
+    Abort,
+    Success,
+    ReturnInfo,
+}
+
 #[derive(Debug)]
 pub struct PreCompactOutcome {
     pub hook_events: Vec<HookCompletedEvent>,
+    pub terminal_action: PreCompactTerminalAction,
     pub should_stop: bool,
     pub stop_reason: Option<String>,
+    pub terminal_info: Option<String>,
 }
 
 pub(crate) fn preview_pre(
@@ -82,8 +93,10 @@ pub(crate) async fn run_pre(
     if matched.is_empty() {
         return PreCompactOutcome {
             hook_events: Vec::new(),
+            terminal_action: PreCompactTerminalAction::Continue,
             should_stop: false,
             stop_reason: None,
+            terminal_info: None,
         };
     }
 
@@ -96,8 +109,10 @@ pub(crate) async fn run_pre(
                     Some(request.turn_id),
                     format!("failed to serialize pre compact hook input: {error}"),
                 ),
+                terminal_action: PreCompactTerminalAction::Continue,
                 should_stop: false,
                 stop_reason: None,
+                terminal_info: None,
             };
         }
     };
@@ -111,14 +126,33 @@ pub(crate) async fn run_pre(
         parse_pre_completed,
     )
     .await;
-    let should_stop = results.iter().any(|result| result.data.should_stop);
+    let terminal_action = results
+        .iter()
+        .map(|result| result.data.terminal_action)
+        .max_by_key(|action| action_rank(*action))
+        .unwrap_or(PreCompactTerminalAction::Continue);
+    let should_stop = terminal_action == PreCompactTerminalAction::Abort;
     let stop_reason = results
         .iter()
         .find_map(|result| result.data.stop_reason.clone());
+    let terminal_info = results
+        .iter()
+        .find_map(|result| result.data.terminal_info.clone());
     PreCompactOutcome {
         hook_events: results.into_iter().map(|result| result.completed).collect(),
+        terminal_action,
         should_stop,
         stop_reason,
+        terminal_info,
+    }
+}
+
+fn action_rank(action: PreCompactTerminalAction) -> u8 {
+    match action {
+        PreCompactTerminalAction::Continue => 0,
+        PreCompactTerminalAction::Success => 1,
+        PreCompactTerminalAction::ReturnInfo => 2,
+        PreCompactTerminalAction::Abort => 3,
     }
 }
 
@@ -221,8 +255,10 @@ fn post_command_input_json(request: &PostCompactRequest) -> Result<String, serde
 
 #[derive(Default)]
 struct CompactHandlerData {
+    terminal_action: PreCompactTerminalAction,
     should_stop: bool,
     stop_reason: Option<String>,
+    terminal_info: Option<String>,
 }
 
 fn parse_pre_completed(
@@ -232,8 +268,10 @@ fn parse_pre_completed(
 ) -> dispatcher::ParsedHandler<CompactHandlerData> {
     let mut entries = Vec::new();
     let mut status = HookRunStatus::Completed;
+    let mut terminal_action = PreCompactTerminalAction::Continue;
     let mut should_stop = false;
     let mut stop_reason = None;
+    let mut terminal_info = None;
 
     match run_result.error.as_deref() {
         Some(error) => {
@@ -255,7 +293,36 @@ fn parse_pre_completed(
                         });
                     }
                     let _ = parsed.universal.suppress_output;
-                    if !parsed.universal.continue_processing {
+                    if let Some(invalid_reason) = parsed.invalid_reason {
+                        status = HookRunStatus::Failed;
+                        entries.push(HookOutputEntry {
+                            kind: HookOutputEntryKind::Error,
+                            text: invalid_reason,
+                        });
+                    } else if let Some(action) = parsed.terminal_action {
+                        terminal_action = match action {
+                            crate::schema::PreCompactTerminalActionWire::Abort => {
+                                PreCompactTerminalAction::Abort
+                            }
+                            crate::schema::PreCompactTerminalActionWire::Success => {
+                                PreCompactTerminalAction::Success
+                            }
+                            crate::schema::PreCompactTerminalActionWire::ReturnInfo => {
+                                PreCompactTerminalAction::ReturnInfo
+                            }
+                        };
+                        should_stop = terminal_action == PreCompactTerminalAction::Abort;
+                        stop_reason = parsed.terminal_reason.or(parsed.universal.stop_reason);
+                        terminal_info = parsed.terminal_info.map(|value| value.to_string());
+                        status = HookRunStatus::Stopped;
+                        entries.push(HookOutputEntry {
+                            kind: HookOutputEntryKind::Stop,
+                            text: stop_reason.clone().unwrap_or_else(|| {
+                                "PreCompact hook returned a terminal action".to_string()
+                            }),
+                        });
+                    } else if !parsed.universal.continue_processing {
+                        terminal_action = PreCompactTerminalAction::Abort;
                         status = HookRunStatus::Stopped;
                         should_stop = true;
                         stop_reason = parsed.universal.stop_reason.clone();
@@ -265,12 +332,6 @@ fn parse_pre_completed(
                                 .universal
                                 .stop_reason
                                 .unwrap_or_else(|| "PreCompact hook stopped execution".to_string()),
-                        });
-                    } else if let Some(invalid_reason) = parsed.invalid_reason {
-                        status = HookRunStatus::Failed;
-                        entries.push(HookOutputEntry {
-                            kind: HookOutputEntryKind::Error,
-                            text: invalid_reason,
                         });
                     }
                 } else if output_parser::looks_like_json(&run_result.stdout) {
@@ -305,8 +366,10 @@ fn parse_pre_completed(
             run: dispatcher::completed_summary(handler, &run_result, status, entries),
         },
         data: CompactHandlerData {
+            terminal_action,
             should_stop,
             stop_reason,
+            terminal_info,
         },
         completion_order: 0,
     }
@@ -408,8 +471,10 @@ fn parse_completed(
             run: dispatcher::completed_summary(handler, &run_result, status, entries),
         },
         data: CompactHandlerData {
+            terminal_action: PreCompactTerminalAction::Continue,
             should_stop,
             stop_reason,
+            terminal_info: None,
         },
         completion_order: 0,
     }
@@ -427,6 +492,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
+    use super::PreCompactTerminalAction;
     use super::parse_post_completed;
     use super::parse_pre_completed;
     use super::post_command_input_json;
@@ -513,6 +579,53 @@ mod tests {
                 kind: HookOutputEntryKind::Stop,
                 text: "nope".to_string(),
             }]
+        );
+    }
+
+    #[test]
+    fn success_terminal_action_skips_compaction_without_abort() {
+        let parsed = parse_pre_completed(
+            &handler(HookEventName::PreCompact),
+            run_result(
+                Some(0),
+                r#"{"hookSpecificOutput":{"hookEventName":"PreCompact","terminalAction":"success","terminalReason":"budget exhausted"}}"#,
+                "",
+            ),
+            Some("turn-1".to_string()),
+        );
+
+        assert_eq!(parsed.completed.run.status, HookRunStatus::Stopped);
+        assert_eq!(
+            parsed.data.terminal_action,
+            PreCompactTerminalAction::Success
+        );
+        assert!(!parsed.data.should_stop);
+        assert_eq!(
+            parsed.data.stop_reason,
+            Some("budget exhausted".to_string())
+        );
+    }
+
+    #[test]
+    fn return_info_terminal_action_keeps_structured_info() {
+        let parsed = parse_pre_completed(
+            &handler(HookEventName::PreCompact),
+            run_result(
+                Some(0),
+                r#"{"hookSpecificOutput":{"hookEventName":"PreCompact","terminalAction":"return_info","terminalReason":"budget exhausted","terminalInfo":{"count":1,"limit":1}}}"#,
+                "",
+            ),
+            Some("turn-1".to_string()),
+        );
+
+        assert_eq!(
+            parsed.data.terminal_action,
+            PreCompactTerminalAction::ReturnInfo
+        );
+        assert!(!parsed.data.should_stop);
+        assert_eq!(
+            parsed.data.terminal_info,
+            Some(r#"{"count":1,"limit":1}"#.to_string())
         );
     }
 

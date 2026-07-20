@@ -26,6 +26,21 @@ use tokio::task::JoinError;
 
 pub type Result<T> = std::result::Result<T, CodexErr>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextTransformTerminalAction {
+    Success,
+    ReturnInfo,
+}
+
+impl std::fmt::Display for ContextTransformTerminalAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Success => "success",
+            Self::ReturnInfo => "return_info",
+        })
+    }
+}
+
 /// Limit UI error messages to a reasonable size while keeping useful context.
 const ERROR_MESSAGE_UI_MAX_BYTES: usize = 2 * 1024;
 
@@ -68,6 +83,12 @@ pub enum SandboxErr {
 pub enum CodexErr {
     #[error("turn aborted. Something went wrong? Hit `/feedback` to report the issue.")]
     TurnAborted,
+
+    #[error("context transform budget exhausted ({action}): {message}")]
+    ContextTransformBudgetExhausted {
+        action: ContextTransformTerminalAction,
+        message: String,
+    },
 
     #[error("shared rollout token budget exhausted")]
     SessionBudgetExceeded,
@@ -176,6 +197,7 @@ impl CodexErr {
     pub fn is_retryable(&self) -> bool {
         match self {
             CodexErr::TurnAborted
+            | CodexErr::ContextTransformBudgetExhausted { .. }
             | CodexErr::SessionBudgetExceeded
             | CodexErr::Interrupted
             | CodexErr::EnvVar(_)

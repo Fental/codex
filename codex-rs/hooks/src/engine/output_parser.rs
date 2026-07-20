@@ -64,6 +64,9 @@ pub(crate) struct StopOutput {
 #[derive(Debug, Clone)]
 pub(crate) struct PreCompactOutput {
     pub universal: UniversalOutput,
+    pub terminal_action: Option<crate::schema::PreCompactTerminalActionWire>,
+    pub terminal_reason: Option<String>,
+    pub terminal_info: Option<serde_json::Value>,
     pub invalid_reason: Option<String>,
 }
 
@@ -241,9 +244,31 @@ pub(crate) fn parse_post_tool_use(stdout: &str) -> Option<PostToolUseOutput> {
 pub(crate) fn parse_pre_compact(stdout: &str) -> Option<PreCompactOutput> {
     let wire: PreCompactCommandOutputWire = parse_json(stdout)?;
     let universal = UniversalOutput::from(wire.universal);
+    let hook_specific_output = wire.hook_specific_output;
+    let terminal_action = hook_specific_output
+        .as_ref()
+        .and_then(|output| output.terminal_action.clone());
+    let terminal_reason = hook_specific_output
+        .as_ref()
+        .and_then(|output| output.terminal_reason.clone());
+    let terminal_info = hook_specific_output.and_then(|output| output.terminal_info);
+    let invalid_reason = if terminal_action.is_some() && !universal.continue_processing {
+        Some("PreCompact hook returned terminalAction with continue:false".to_string())
+    } else if terminal_action.is_some()
+        && terminal_reason
+            .as_deref()
+            .is_some_and(|reason| reason.is_empty())
+    {
+        Some("PreCompact hook returned an empty terminalReason".to_string())
+    } else {
+        None
+    };
     Some(PreCompactOutput {
         universal,
-        invalid_reason: None,
+        terminal_action,
+        terminal_reason,
+        terminal_info,
+        invalid_reason,
     })
 }
 

@@ -7,6 +7,7 @@ use crate::client_common::ResponseEvent;
 use crate::context::world_state::WorldState;
 use crate::hook_runtime::PostCompactHookOutcome;
 use crate::hook_runtime::PreCompactHookOutcome;
+use crate::hook_runtime::pre_compact_terminal_error;
 use crate::hook_runtime::run_post_compact_hooks;
 use crate::hook_runtime::run_pre_compact_hooks;
 use crate::responses_metadata::CodexResponsesMetadata;
@@ -172,6 +173,19 @@ async fn run_compact_task_inner(
         PreCompactHookOutcome::Continue => {}
         PreCompactHookOutcome::Stopped => {
             let error = CodexErr::TurnAborted;
+            attempt
+                .track(
+                    sess.as_ref(),
+                    CompactionStatus::Interrupted,
+                    Some(&error),
+                    CompactionAnalyticsDetails::default(),
+                )
+                .await;
+            return Err(error);
+        }
+        terminal_outcome => {
+            let error = pre_compact_terminal_error(terminal_outcome)
+                .expect("terminal compaction outcome must produce an error");
             attempt
                 .track(
                     sess.as_ref(),

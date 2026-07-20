@@ -13,6 +13,7 @@ use crate::context::world_state::WorldState;
 use crate::context_manager::ContextManager;
 use crate::hook_runtime::PostCompactHookOutcome;
 use crate::hook_runtime::PreCompactHookOutcome;
+use crate::hook_runtime::pre_compact_terminal_error;
 use crate::hook_runtime::run_post_compact_hooks;
 use crate::hook_runtime::run_pre_compact_hooks;
 use crate::responses_metadata::CompactionTurnMetadata;
@@ -145,6 +146,19 @@ async fn run_remote_compact_task_inner(
                 .await;
             return Err(error);
         }
+        terminal_outcome => {
+            let error = pre_compact_terminal_error(terminal_outcome)
+                .expect("terminal compaction outcome must produce an error");
+            attempt
+                .track(
+                    sess.as_ref(),
+                    codex_analytics::CompactionStatus::Interrupted,
+                    Some(&error),
+                    analytics_details,
+                )
+                .await;
+            return Err(error);
+        }
     }
     let result = run_remote_compact_task_inner_impl(
         sess,
@@ -171,6 +185,9 @@ async fn run_remote_compact_task_inner(
         .track(sess.as_ref(), status, codex_error, analytics_details)
         .await;
     if let Err(err) = result {
+        if matches!(&err, CodexErr::ContextTransformBudgetExhausted { .. }) {
+            return Err(err);
+        }
         sess.track_turn_codex_error(turn_context, &err);
         let event = EventMsg::Error(
             err.to_error_event(Some("Error running remote compact task".to_string())),

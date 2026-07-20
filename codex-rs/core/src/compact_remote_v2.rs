@@ -14,6 +14,7 @@ use crate::compact_remote::process_compacted_history;
 use crate::compact_remote::should_keep_compacted_history_item;
 use crate::hook_runtime::PostCompactHookOutcome;
 use crate::hook_runtime::PreCompactHookOutcome;
+use crate::hook_runtime::pre_compact_terminal_error;
 use crate::hook_runtime::run_post_compact_hooks;
 use crate::hook_runtime::run_pre_compact_hooks;
 use crate::responses_metadata::CodexResponsesMetadata;
@@ -155,6 +156,19 @@ async fn run_remote_compact_task_inner(
                 .await;
             return Err(error);
         }
+        terminal_outcome => {
+            let error = pre_compact_terminal_error(terminal_outcome)
+                .expect("terminal compaction outcome must produce an error");
+            attempt
+                .track(
+                    sess.as_ref(),
+                    codex_analytics::CompactionStatus::Interrupted,
+                    Some(&error),
+                    analytics_details,
+                )
+                .await;
+            return Err(error);
+        }
     }
     let result = run_remote_compact_task_inner_impl(
         sess,
@@ -182,7 +196,9 @@ async fn run_remote_compact_task_inner(
         .await;
     match result {
         Ok(()) => Ok(()),
-        Err(err @ CodexErr::TurnAborted) => Err(err),
+        Err(err @ (CodexErr::TurnAborted | CodexErr::ContextTransformBudgetExhausted { .. })) => {
+            Err(err)
+        }
         Err(err) => {
             sess.track_turn_codex_error(turn_context, &err);
             let event = EventMsg::Error(

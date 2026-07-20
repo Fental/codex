@@ -127,6 +127,30 @@ use tracing::trace;
 use tracing::trace_span;
 use tracing::warn;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContextTransformTerminalHandling {
+    Abort,
+    Complete,
+    CompleteWithInfo,
+}
+
+pub(crate) fn context_transform_terminal_handling(
+    error: &CodexErr,
+) -> Option<ContextTransformTerminalHandling> {
+    match error {
+        CodexErr::TurnAborted => Some(ContextTransformTerminalHandling::Abort),
+        CodexErr::ContextTransformBudgetExhausted { action, .. } => Some(match action {
+            codex_protocol::error::ContextTransformTerminalAction::Success => {
+                ContextTransformTerminalHandling::Complete
+            }
+            codex_protocol::error::ContextTransformTerminalAction::ReturnInfo => {
+                ContextTransformTerminalHandling::CompleteWithInfo
+            }
+        }),
+        _ => None,
+    }
+}
+
 /// Takes initial turn input and runs a loop where, at each sampling request,
 /// the model replies with either:
 ///
@@ -156,8 +180,22 @@ pub(crate) async fn run_turn(
     // diffs/full reinjection + user input) and trigger compaction preemptively
     // when they would push the thread over the compaction threshold.
     if let Err(err) = run_pre_sampling_compact(&sess, &turn_context, &mut client_session).await {
-        if matches!(err, CodexErr::TurnAborted) {
-            return Err(err);
+        match context_transform_terminal_handling(&err) {
+            Some(ContextTransformTerminalHandling::Abort) => return Err(err),
+            Some(ContextTransformTerminalHandling::Complete) => return Ok(None),
+            Some(ContextTransformTerminalHandling::CompleteWithInfo) => {
+                if let CodexErr::ContextTransformBudgetExhausted { message, .. } = &err {
+                    sess.send_event(
+                        &turn_context,
+                        EventMsg::Warning(WarningEvent {
+                            message: format!("Context transform budget: {message}"),
+                        }),
+                    )
+                    .await;
+                }
+                return Ok(None);
+            }
+            None => {}
         }
         let error = err.to_codex_protocol_error();
         sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
@@ -363,8 +401,25 @@ pub(crate) async fn run_turn(
                     )
                     .await
                     {
-                        if matches!(err, CodexErr::TurnAborted) {
-                            return Err(err);
+                        match context_transform_terminal_handling(&err) {
+                            Some(ContextTransformTerminalHandling::Abort) => return Err(err),
+                            Some(ContextTransformTerminalHandling::Complete) => return Ok(None),
+                            Some(ContextTransformTerminalHandling::CompleteWithInfo) => {
+                                if let CodexErr::ContextTransformBudgetExhausted {
+                                    message, ..
+                                } = &err
+                                {
+                                    sess.send_event(
+                                        &turn_context,
+                                        EventMsg::Warning(WarningEvent {
+                                            message: format!("Context transform budget: {message}"),
+                                        }),
+                                    )
+                                    .await;
+                                }
+                                return Ok(None);
+                            }
+                            None => {}
                         }
                         let error = err.to_codex_protocol_error();
                         sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
