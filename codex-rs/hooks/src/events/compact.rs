@@ -23,6 +23,7 @@ use crate::schema::SubagentCommandInputFields;
 pub struct PreCompactRequest {
     pub session_id: ThreadId,
     pub turn_id: String,
+    pub compact_attempt_id: String,
     pub subagent: Option<common::SubagentHookContext>,
     pub cwd: AbsolutePathBuf,
     pub transcript_path: Option<PathBuf>,
@@ -34,6 +35,7 @@ pub struct PreCompactRequest {
 pub struct PostCompactRequest {
     pub session_id: ThreadId,
     pub turn_id: String,
+    pub compact_attempt_id: String,
     pub subagent: Option<common::SubagentHookContext>,
     pub cwd: AbsolutePathBuf,
     pub transcript_path: Option<PathBuf>,
@@ -161,6 +163,7 @@ fn pre_command_input_json(request: &PreCompactRequest) -> Result<String, serde_j
     serde_json::to_string(&PreCompactCommandInput {
         session_id: request.session_id.to_string(),
         turn_id: request.turn_id.clone(),
+        compact_attempt_id: request.compact_attempt_id.clone(),
         agent_id: subagent.agent_id,
         agent_type: subagent.agent_type,
         transcript_path: crate::schema::NullableString::from_path(request.transcript_path.clone()),
@@ -243,6 +246,7 @@ fn post_command_input_json(request: &PostCompactRequest) -> Result<String, serde
     serde_json::to_string(&PostCompactCommandInput {
         session_id: request.session_id.to_string(),
         turn_id: request.turn_id.clone(),
+        compact_attempt_id: request.compact_attempt_id.clone(),
         agent_id: subagent.agent_id,
         agent_type: subagent.agent_type,
         transcript_path: crate::schema::NullableString::from_path(request.transcript_path.clone()),
@@ -511,6 +515,7 @@ mod tests {
             json!({
                 "session_id": pre_request().session_id.to_string(),
                 "turn_id": "turn-1",
+                "compact_attempt_id": "compact-attempt-1",
                 "transcript_path": null,
                 "cwd": test_path_buf("/tmp").display().to_string(),
                 "hook_event_name": "PreCompact",
@@ -531,6 +536,7 @@ mod tests {
             json!({
                 "session_id": post_request().session_id.to_string(),
                 "turn_id": "turn-1",
+                "compact_attempt_id": "compact-attempt-1",
                 "transcript_path": null,
                 "cwd": test_path_buf("/tmp").display().to_string(),
                 "hook_event_name": "PostCompact",
@@ -685,6 +691,7 @@ mod tests {
             session_id: ThreadId::from_string("00000000-0000-4000-8000-000000000001")
                 .expect("valid thread id"),
             turn_id: "turn-1".to_string(),
+            compact_attempt_id: "compact-attempt-1".to_string(),
             subagent: None,
             cwd: test_path_buf("/tmp").abs(),
             transcript_path: None,
@@ -698,6 +705,7 @@ mod tests {
             session_id: ThreadId::from_string("00000000-0000-4000-8000-000000000002")
                 .expect("valid thread id"),
             turn_id: "turn-1".to_string(),
+            compact_attempt_id: "compact-attempt-1".to_string(),
             subagent: None,
             cwd: test_path_buf("/tmp").abs(),
             transcript_path: None,

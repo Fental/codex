@@ -68,7 +68,9 @@ async fn run_compact_task_inner(
     world_state: Arc<WorldState>,
     trigger: CompactionTrigger,
 ) -> CodexResult<()> {
-    let pre_compact_outcome = run_pre_compact_hooks(sess, turn_context, trigger).await;
+    let compact_attempt_id = uuid::Uuid::now_v7().to_string();
+    let pre_compact_outcome =
+        run_pre_compact_hooks(sess, turn_context, trigger, &compact_attempt_id).await;
     match pre_compact_outcome {
         PreCompactHookOutcome::Continue => {}
         PreCompactHookOutcome::Stopped => return Err(CodexErr::TurnAborted),
@@ -86,7 +88,8 @@ async fn run_compact_task_inner(
     sess.emit_turn_item_completed(turn_context, compaction_item)
         .await;
 
-    let post_compact_outcome = run_post_compact_hooks(sess, turn_context, trigger).await;
+    let post_compact_outcome =
+        run_post_compact_hooks(sess, turn_context, trigger, &compact_attempt_id).await;
     if let PostCompactHookOutcome::Stopped = post_compact_outcome {
         return Err(CodexErr::TurnAborted);
     }

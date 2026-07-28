@@ -367,6 +367,8 @@ pub(crate) struct PreCompactCommandInput {
     pub session_id: String,
     /// Codex extension: expose the active turn id to internal turn-scoped hooks.
     pub turn_id: String,
+    /// Stable identity shared by the pre/post hooks for one compaction attempt.
+    pub compact_attempt_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -387,6 +389,8 @@ pub(crate) struct PostCompactCommandInput {
     pub session_id: String,
     /// Codex extension: expose the active turn id to internal turn-scoped hooks.
     pub turn_id: String,
+    /// Stable identity shared by the pre/post hooks for one compaction attempt.
+    pub compact_attempt_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1101,6 +1105,25 @@ mod tests {
                     .as_array()
                     .expect("schema required fields")
                     .contains(&Value::String("turn_id".to_string()))
+            );
+        }
+    }
+
+    #[test]
+    fn compact_hook_inputs_require_stable_attempt_id() {
+        for schema in [
+            schema_json::<PreCompactCommandInput>()
+                .expect("serialize pre compact input schema"),
+            schema_json::<PostCompactCommandInput>()
+                .expect("serialize post compact input schema"),
+        ] {
+            let schema: Value = serde_json::from_slice(&schema).expect("parse hook input schema");
+            assert_eq!(schema["properties"]["compact_attempt_id"]["type"], "string");
+            assert!(
+                schema["required"]
+                    .as_array()
+                    .expect("schema required fields")
+                    .contains(&Value::String("compact_attempt_id".to_string()))
             );
         }
     }

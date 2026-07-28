@@ -16,6 +16,10 @@
     "agent_type": {
       "type": "string"
     },
+    "compact_attempt_id": {
+      "description": "Stable identity shared by the pre/post hooks for one compaction attempt.",
+      "type": "string"
+    },
     "cwd": {
       "type": "string"
     },
@@ -45,6 +49,7 @@
     }
   },
   "required": [
+    "compact_attempt_id",
     "cwd",
     "hook_event_name",
     "model",
