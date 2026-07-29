@@ -95,6 +95,17 @@ jobs:
           target_no_jitter="${target_no_jitter//-/_}"
           echo "${target_no_jitter}=1" >> "$GITHUB_ENV"
 
+      - if: matrix.libc == 'musl'
+        name: Force static musl CRT
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          rustflags_var="CARGO_TARGET_${TARGET^^}_RUSTFLAGS"
+          rustflags_var="${rustflags_var//-/_}"
+          echo "${rustflags_var}=-C target-feature=+crt-static" >> "$GITHUB_ENV"
+
       - name: Configure rusty_v8 artifact overrides and verify checksums
         uses: ./.github/actions/setup-rusty-v8
         with:
@@ -220,6 +231,10 @@ jobs:
             readelf -h "$root/bin/codex"
             readelf -l "$root/bin/codex"
             readelf -d "$root/bin/codex" || true
+            if [[ "$LIBC" == "musl" ]] && readelf -l "$root/bin/codex" | grep -q INTERP; then
+              echo "musl Client is dynamically linked; expected a static executable" >&2
+              exit 1
+            fi
           fi
 
           set +e
