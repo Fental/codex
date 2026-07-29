@@ -55,7 +55,7 @@ jobs:
 
       - if: runner.os == 'Linux'
         name: Install Linux build dependencies
-        run: sudo apt-get update && sudo apt-get install -y binutils pkg-config libcap-dev
+        run: sudo apt-get update && sudo apt-get install -y binutils file gdb pkg-config libcap-dev
 
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
@@ -190,16 +190,53 @@ jobs:
           )
           PY
 
+      # Preserve the exact archive even when the executable smoke test fails so
+      # release failures can be reproduced without rebuilding the Client.
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: codex-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
       - name: Smoke test packaged Client
         shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+          LIBC: ${{ matrix.libc }}
         run: |
           set -euo pipefail
           root="${RUNNER_TEMP}/smoke-${PLATFORM}"
           mkdir -p "$root"
           tar -C "$root" -xzf "dist/codex-${PLATFORM}.tar.gz"
+
+          if [[ "$PLATFORM" == linux-* ]]; then
+            echo "== host =="
+            uname -a
+            lscpu
+            echo "== executable =="
+            file "$root/bin/codex"
+            ldd "$root/bin/codex" || true
+            readelf -h "$root/bin/codex"
+            readelf -l "$root/bin/codex"
+            readelf -d "$root/bin/codex" || true
+          fi
+
+          set +e
           "$root/bin/codex" --version
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 ]]; then
+            if [[ "$TARGET" == "x86_64-unknown-linux-musl" ]]; then
+              gdb -q -batch \
+                -ex "set pagination off" \
+                -ex "run" \
+                -ex "thread apply all bt full" \
+                --args "$root/bin/codex" --version || true
+            fi
+            exit "$status"
+          fi
+
           python3 - "$root/manifest.json" <<'PY'
           import hashlib
           import json
@@ -214,12 +251,6 @@ jobs:
               assert path.is_file(), relative
               assert hashlib.sha256(path.read_bytes()).hexdigest() == metadata["sha256"]
           PY
-
-      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: codex-${{ matrix.platform }}
-          path: dist/*
-          if-no-files-found: error
 
   linux-portability:
     name: Test linux-x86_64 on ${{ matrix.image }}
