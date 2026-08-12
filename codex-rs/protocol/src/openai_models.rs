@@ -29,6 +29,7 @@ use crate::config_types::ReasoningSummary;
 use crate::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use crate::config_types::ServiceTier;
 use crate::config_types::Verbosity;
+use crate::models::BASE_INSTRUCTIONS_DEFAULT;
 use crate::protocol::MultiAgentVersion;
 
 const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
@@ -358,6 +359,10 @@ const fn default_true() -> bool {
     true
 }
 
+fn default_base_instructions() -> String {
+    BASE_INSTRUCTIONS_DEFAULT.to_string()
+}
+
 #[allow(clippy::trivially_copy_pass_by_ref)]
 const fn is_true(value: &bool) -> bool {
     *value
@@ -384,6 +389,7 @@ pub struct ModelInfo {
     pub default_service_tier: Option<String>,
     pub availability_nux: Option<ModelAvailabilityNux>,
     pub upgrade: Option<ModelInfoUpgrade>,
+    #[serde(default = "default_base_instructions")]
     pub base_instructions: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_messages: Option<ModelMessages>,
@@ -736,6 +742,10 @@ mod tests {
             tool_mode: None,
             multi_agent_version: None,
         }
+    }
+
+    fn test_model_json() -> serde_json::Value {
+        serde_json::to_value(test_model(/*spec*/ None)).expect("serialize test model")
     }
 
     fn personality_variables() -> ModelInstructionsVariables {
@@ -1116,6 +1126,54 @@ mod tests {
         assert_eq!(model.comp_hash, None);
         assert_eq!(model.auto_review_model_override, None);
         assert_eq!(model.tool_mode, None);
+    }
+
+    #[test]
+    fn model_info_defaults_base_instructions_when_omitted() {
+        let mut value = test_model_json();
+        value
+            .as_object_mut()
+            .expect("model info should serialize as an object")
+            .remove("base_instructions");
+
+        let model: ModelInfo = serde_json::from_value(value)
+            .expect("deserialize model info without base instructions");
+
+        assert_eq!(
+            model.base_instructions,
+            crate::models::BASE_INSTRUCTIONS_DEFAULT
+        );
+    }
+
+    #[test]
+    fn model_info_preserves_explicit_base_instructions() {
+        for instructions in ["", "custom instructions", " \n"] {
+            let mut value = test_model_json();
+            value["base_instructions"] = serde_json::json!(instructions);
+
+            let model: ModelInfo = serde_json::from_value(value)
+                .expect("deserialize model info with explicit base instructions");
+
+            assert_eq!(model.base_instructions, instructions);
+        }
+    }
+
+    #[test]
+    fn model_info_rejects_non_string_base_instructions() {
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!(42),
+            serde_json::json!(["instructions"]),
+            serde_json::json!({"text": "instructions"}),
+            serde_json::json!(true),
+        ] {
+            let mut value = test_model_json();
+            value["base_instructions"] = invalid;
+
+            let result = serde_json::from_value::<ModelInfo>(value);
+
+            assert!(result.is_err());
+        }
     }
 
     #[test]
